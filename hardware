@@ -1,0 +1,65 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+#define DHTTYPE DHT22   // DHT 11
+
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+const int DHTPin = 25;
+DHT dht(DHTPin, DHTTYPE);
+
+const int analogInPin1 = 39;
+int sensorValue1 = 0;
+const int analogInPin2 = 36;
+int sensorValue2 = 0;
+int sensorValue3 = 0;
+int sensorValue4 = 0;
+
+const int potenciometro = 35; // pino de entrada do potenciômetro
+
+
+void setup() {
+  dht.begin();
+
+  lcd.init();
+  lcd.backlight();
+
+}
+
+void loop() {
+  if (analogRead(potenciometro) >= 0 && analogRead(potenciometro) <= 1500) {
+    lcd.clear();
+
+    sensorValue1 = analogRead(analogInPin1);
+    lcd.setCursor(0, 0);
+    lcd.print(sensorValue1);
+    sensorValue2 = analogRead(analogInPin2);
+    lcd.setCursor(0, 1);
+    lcd.print(sensorValue2);
+    delay(300);
+
+  }
+  else if (analogRead(potenciometro) > 1500 && analogRead(potenciometro) <= 3000 ) {
+    lcd.clear();
+
+    sensorValue3 = dht.readHumidity();
+    lcd.setCursor(0, 2);
+    lcd.print(sensorValue3);
+    sensorValue4 = dht.readTemperature();
+    lcd.setCursor(0, 3);
+    lcd.print(sensorValue4);
+    delay(300);
+  }
+  else if (analogRead(potenciometro) > 3000 && analogRead(potenciometro) <= 4095 ) {
+    lcd.clear();
+
+    sensorValue3 = dht.readHumidity();
+    lcd.setCursor(0, 2);
+    lcd.print("teste");
+    sensorValue4 = dht.readTemperature();
+    lcd.setCursor(0, 3);
+    lcd.print("teste 2");
+    delay(300);
+
+  }
+}
