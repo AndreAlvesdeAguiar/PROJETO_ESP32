@@ -1,0 +1,143 @@
+#include "ArduinoJson.h"
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+#define DHTTYPE DHT22   // DHT 11
+
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+const int DHTPin = 25;
+const int MQPin = 34;
+
+#include "MQ135.h"
+#define ANALOGPIN 34    //  Define Analog PIN on Arduino Board
+#define RZERO 206.85    //  Define RZERO Calibration Value
+MQ135 gasSensor = MQ135(ANALOGPIN);
+
+
+DHT dht(DHTPin, DHTTYPE);
+
+const int analogInPin1 = 39;
+int sensorValue1 = 0;
+const int analogInPin2 = 36;
+int sensorValue2 = 0;
+//const int DHTPin = 25;
+int sensorValue3 = 0;
+//const int DHTPin = 25;
+int sensorValue4 = 0;
+
+
+const int potenciometro = 35; // pino de entrada do potenciômetro
+
+void setup() {
+
+  Serial.begin(115200);
+  Serial.println();
+  dht.begin();
+  lcd.init();
+  lcd.backlight();
+  float rzero = gasSensor.getRZero();
+
+
+}
+
+void loop() {
+
+
+  float h = dht.readHumidity();
+  float t = dht.readTemperature();
+
+   DynamicJsonDocument doc(2048);
+  //Creates temperature and humidity posts in the JSON documents with the values from the DHT-11
+  doc["Temperature"] = String(t);
+  doc["Humidity"] = String(h);
+  //The JSON document has to be serialized into a string to be sent as the payload in the POST request. 
+  const char* sensor = doc["sensor"];
+  double latitude    = doc["data"][0];
+  double longitude   = doc["data"][1];
+
+  char json1[] = "{\"sensor\":\"gps\",\"time\":1351824120,\"data\":[48.756080,2.302038]}";
+
+//https://arduinojson.org/
+
+
+  String json;
+  serializeJson(doc,json);
+
+  //JsonObject& parsed = JSONBuffer.parseObject(JSONMessage); //Parse message
+
+                //Get value of sensor measurement
+
+  Serial.print("Sensor type: ");
+  Serial.println(h);
+  Serial.print("Sensor value: ");
+  Serial.println(t);
+  Serial.print("Sensor value JSON: ");
+  Serial.println(json);
+  Serial.print("Sensor value JSON 1: ");
+  Serial.println(json1);
+
+
+
+  Serial.println();
+  delay(5000);
+
+  if (analogRead(potenciometro) >= 0 && analogRead(potenciometro) <= 1000) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Umidade do Ar");
+    lcd.setCursor(0, 1);
+    sensorValue3 = dht.readHumidity();
+    lcd.print(sensorValue3);
+    lcd.setCursor(0, 2);
+    lcd.print("Temperatura");
+    lcd.setCursor(0, 3);
+    sensorValue4 = dht.readTemperature();
+    lcd.print(sensorValue4);
+    delay(1000);
+  }
+
+  else if (analogRead(potenciometro) > 1000 && analogRead(potenciometro) <= 2000 ) {
+    lcd.clear();
+    float ppm = gasSensor.getPPM();
+    lcd.clear();
+    Serial.print("CO2 ppm value : ");
+    Serial.println(ppm);
+    lcd.setCursor(0, 0);
+    lcd.print("  -Gas Sensor-  ");
+    lcd.setCursor(0, 1);
+    lcd.print("CO2 : ");
+    lcd.print(ppm);
+    lcd.print("  PPM");
+    delay(1000);
+  }
+
+  else if (analogRead(potenciometro) > 2000 && analogRead(potenciometro) <= 3000 ) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Umidade do solo A");
+    lcd.setCursor(0, 1);
+    sensorValue1 = analogRead(analogInPin1);
+    lcd.print(sensorValue1);
+    lcd.setCursor(0, 2);
+    lcd.print("Umidade do solo B");
+    lcd.setCursor(0, 3);
+    sensorValue2 = analogRead(analogInPin2);
+    lcd.print(sensorValue2);
+    delay(1000);
+  }
+
+  else if (analogRead(potenciometro) > 3000 && analogRead(potenciometro) <= 4095 ) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("teste 0");
+    lcd.setCursor(0, 1);
+    lcd.print("teste 1");
+    lcd.setCursor(0, 2);
+    lcd.print("teste 2");
+    lcd.setCursor(0, 3);
+    lcd.print("teste 3");
+    delay(1000);
+  }
+}
