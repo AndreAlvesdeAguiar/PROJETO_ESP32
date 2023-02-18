@@ -1,0 +1,315 @@
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
+
+
+#include <DHT.h>
+#include <MQ135.h>
+
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+const uint8_t SCREEN_WIDTH = 128; // OLED width, in pixels
+const uint8_t SCREEN_HEIGHT = 64; // OLED height, in pixels
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+
+const uint16_t POT_LOW = 0;
+const uint16_t POT_MID_LOW = 1000;
+const uint16_t POT_MID_HIGH = 2000;
+const uint16_t POT_HIGH = 3000;
+const uint16_t POT_MAX = 4095;
+
+
+const char* SSID = "Okura&Aguiar";
+const char* PWD = "*welcome03";
+
+const uint8_t MOISTURE_PIN_1 = 36;
+const uint8_t MOISTURE_PIN_2 = 39;
+const uint8_t GAS_PIN = 34;
+const uint8_t DHT_PIN = 25;
+const int potenciometro = 35; // pino de entrada do potenciômetro
+const uint8_t DHTTYPE = DHT22; 
+
+/*
+int sensorValue1 = 0;
+int sensorValue2 = 0;
+int sensorValue3 = 0;
+int sensorValue4 = 0;
+*/
+
+DHT dht(DHT_PIN, DHTTYPE);
+MQ135 gasSensor = MQ135(GAS_PIN);
+
+double temperature, humidity, moisture1, moisture2, mq135, ppm, ppm2, co2, co2_2;
+
+WebServer server(80);
+
+void setup_routing() {
+  
+  server.on("/temperature", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(200);
+    double temperature = dht.readTemperature();
+    if (!isnan(temperature)) {
+      jsonDocument["type"] = "temperature";
+      jsonDocument["value"] = temperature;
+      jsonDocument["unit"] = "°C";
+    } else {
+      jsonDocument["error"] = "Failed to read temperature";
+    }
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  server.on("/humidity", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "humidity";
+    jsonDocument["value"] = dht.readHumidity();
+    jsonDocument["unit"] = "%";
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  /*   
+   server.on("/humidity", []() {
+    server.send(200, "application/json", "{\"type\":\"humidity\",\"value\":" + String(humidity) + ",\"unit\":\"%\"}");
+  });
+  */
+  
+  server.on("/moisture1", HTTP_GET, []() {
+   DynamicJsonDocument jsonDocument(200);
+    int moisture = analogRead(MOISTURE_PIN_1);
+      jsonDocument["type"] = "moisture";
+      jsonDocument["value"] = moisture;
+      jsonDocument["unit"] = "%";
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  server.on("/moisture2", HTTP_GET, []() {
+     DynamicJsonDocument jsonDocument(200);
+    int moisture = analogRead(MOISTURE_PIN_2);
+    //if (moisture >= 0 && moisture <= 1023) {
+      jsonDocument["type"] = "moisture";
+      jsonDocument["value"] = moisture;
+      jsonDocument["unit"] = "%";
+    //} else {
+    //  jsonDocument["error"] = "Failed to read moisture 2";
+    //}
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+  
+  server.on("/co2", HTTP_GET, []() {
+   DynamicJsonDocument jsonDocument(200);
+    int ppm = gasSensor.getPPM();
+    //if (ppm >= 0) {
+      jsonDocument["type"] = "co2";
+      jsonDocument["value"] = ppm;
+      jsonDocument["unit"] = "ppm";
+    //} else {
+    //  jsonDocument["error"] = "Failed to read CO2";
+   // }
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  server.on("/co2_2", HTTP_GET, []() {
+   DynamicJsonDocument jsonDocument(200);
+    int ppm2 = analogRead(GAS_PIN);
+    //if (ppm >= 0) {
+      jsonDocument["type"] = "co2";
+      jsonDocument["value"] = ppm2;
+      jsonDocument["unit"] = "ppm";
+    //} else {
+     // jsonDocument["error"] = "Failed to read CO2";
+    //}
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+  
+  server.on("/data", HTTP_GET, []() {
+   DynamicJsonDocument jsonDocument(2000);
+    jsonDocument["temperature"]["type"] = "temperature";
+    jsonDocument["temperature"]["value"] = dht.readTemperature();
+    jsonDocument["temperature"]["unit"] = "°C";
+    jsonDocument["humidity"]["type"] = "humidity";
+    jsonDocument["humidity"]["value"] = dht.readHumidity();
+    jsonDocument["humidity"]["unit"] = "%";
+    jsonDocument["moisture1"]["type"] = "moisture1";
+    jsonDocument["moisture1"]["value"] = analogRead(MOISTURE_PIN_1);
+    jsonDocument["moisture1"]["unit"] = "%";
+    jsonDocument["moisture2"]["type"] = "moisture2";
+    jsonDocument["moisture2"]["value"] = analogRead(MOISTURE_PIN_2);
+    jsonDocument["moisture2"]["unit"] = "%";
+    jsonDocument["co2"]["type"] = "co2";
+    jsonDocument["co2"]["value"] = gasSensor.getPPM();;
+    jsonDocument["co2"]["unit"] = "ppm";
+    jsonDocument["co2_2"]["type"] = "co2_2";
+    jsonDocument["co2_2"]["value"] = analogRead(GAS_PIN);
+    jsonDocument["co2_2"]["unit"] = "X";
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+  
+
+
+  server.begin();
+}
+
+void read_sensor_data(void * parameter) {
+  for (;;) {
+    double temperature = dht.readTemperature();
+    double umidade = dht.readHumidity();
+    double moisture1 = analogRead(MOISTURE_PIN_1);
+    double moisture2 = analogRead(MOISTURE_PIN_2);
+    double mq135 = analogRead(GAS_PIN);
+    
+    vTaskDelay(pdMS_TO_TICKS(60000));
+  }
+}
+
+void setup_task() {
+  xTaskCreate(
+    read_sensor_data,
+    "Read sensor data",
+    1000,
+    NULL,
+    1,
+    NULL
+  );
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  WiFi.begin(SSID, PWD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  setup_task(); // Setup sensor data reading task
+  setup_routing(); // Setup web server routing
+
+  Serial.println(WiFi.localIP());
+
+
+  lcd.init();
+  lcd.backlight();
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    while (true); // Don't proceed, loop forever
+  }
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 10);
+  display.println("IP");
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 20);
+  display.print(WiFi.localIP());
+  display.display();
+  delay(2000);
+  display.clearDisplay();
+  
+}
+
+void loop() {
+  server.handleClient();
+
+  uint16_t pot_value = analogRead(potenciometro);
+  int sensorValue1 = 0;
+  int sensorValue2 = 0;
+  int sensorValue3 = 0;
+  int sensorValue4 = 0;
+
+/*
+const uint16_t POT_LOW = 0;
+const uint16_t POT_MID_LOW = 1000;
+const uint16_t POT_MID_HIGH = 2000;
+const uint16_t POT_HIGH = 3000;
+const uint16_t POT_MAX = 4095;
+*/
+
+   if (pot_value >= POT_LOW && pot_value <= POT_MID_LOW) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Umidade do Ar");
+    lcd.setCursor(0, 1);
+    sensorValue3 = dht.readHumidity();
+    lcd.print(sensorValue3);
+    lcd.setCursor(0, 2);
+    lcd.print("Temperatura");
+    lcd.setCursor(0, 3);
+    sensorValue4 = dht.readTemperature();
+    lcd.print(sensorValue4);
+    delay(1000);
+  } else if (pot_value > POT_MID_LOW && pot_value <= POT_MID_HIGH ) {
+    lcd.clear();
+    double ppm = analogRead(GAS_PIN);
+    lcd.clear();
+    Serial.print("CO2 ppm value : ");
+    Serial.println(ppm);
+    lcd.setCursor(0, 0);
+    lcd.print("  -Gas Sensor-  ");
+    lcd.setCursor(0, 1);
+    lcd.print("CO2 : ");
+    lcd.print(ppm);
+    lcd.print("  PPM");
+    delay(1000);
+  } else if (pot_value > POT_MID_HIGH && pot_value <= POT_HIGH) {
+    lcd.clear();
+    sensorValue1 = analogRead(MOISTURE_PIN_1);
+    sensorValue2 = analogRead(MOISTURE_PIN_2);
+    lcd.clear();
+    Serial.print("Moisture 1 : ");
+    Serial.println(sensorValue1);
+    Serial.print("Moisture 2 : ");
+    Serial.println(sensorValue2);
+    lcd.setCursor(0, 0);
+    lcd.print("  Umidade do solo 1 ");
+    lcd.setCursor(0, 1);
+    lcd.print("M1 : ");
+    lcd.print(sensorValue1);
+    lcd.print("  ?");
+    lcd.setCursor(0, 2);
+    lcd.print("  Umidade do solo 2 ");
+    lcd.setCursor(0, 3);
+    lcd.print("M2 : ");
+    lcd.print(sensorValue2);
+    lcd.print("  ?");
+    delay(1000);
+  } else if (pot_value > POT_HIGH && pot_value <= POT_MAX) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("teste 0");
+    lcd.setCursor(0, 1);
+    lcd.print("teste 1");
+    lcd.setCursor(0, 2);
+    lcd.print("teste 2");
+    lcd.setCursor(0, 3);
+    lcd.print("teste 3");
+    delay(1000);
+  }
+}
+
+
