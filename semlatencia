@@ -1,0 +1,337 @@
+
+#include <WiFi.h>
+#include <WebServer.h>
+#include <ArduinoJson.h>
+
+
+#include <DHT.h>
+#include <MQ135.h>
+
+
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#include "RTClib.h"
+
+RTC_DS3231 rtc;
+
+
+const uint8_t SCREEN_WIDTH = 128; // OLED width, in pixels
+const uint8_t SCREEN_HEIGHT = 64; // OLED height, in pixels
+
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+LiquidCrystal_I2C lcd(0x27, 20, 4);
+
+const char* SSID = "Okura&Aguiar";
+const char* PWD = "*welcome03";
+
+const uint8_t MOISTURE_PIN_1 = 39;
+const uint8_t GAS_PIN = 34;
+const uint8_t DHT_PIN = 25;
+const uint8_t DHTTYPE = DHT22;
+
+DHT dht(DHT_PIN, DHTTYPE);
+MQ135 gasSensor = MQ135(GAS_PIN);
+
+unsigned long previousMillis = 0;
+const unsigned long interval = 3500;  // Intervalo de 5 segundos
+int currentBlock = 1;
+
+
+double temperature, humidity, moisture1, mq135, co2, led;
+
+WebServer server(80);
+
+void setup_routing() {
+
+  server.on("/led_all", HTTP_GET, []() {
+    if (server.hasArg("state")) {
+      String state = server.arg("state");
+      if (state == "on") {
+        digitalWrite(12, HIGH);
+        digitalWrite(13, HIGH);
+        digitalWrite(14, HIGH);
+        digitalWrite(19, HIGH);
+        digitalWrite(27, HIGH);
+        server.send(200, "text/plain", "LED ligado");
+      } else if (state == "off") {
+        digitalWrite(12, LOW);
+        digitalWrite(13, LOW);
+        digitalWrite(14, LOW);
+        digitalWrite(19, LOW);
+        digitalWrite(27, LOW);
+        server.send(200, "text/plain", "LED desligado");
+      } else {
+        server.send(400, "text/plain", "Valor de estado inválido");
+      }
+    } else {
+      server.send(400, "text/plain", "Parâmetro de estado ausente");
+    }
+  });
+
+  server.on("/led1/on", HTTP_GET, []() {
+    digitalWrite(12, HIGH);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led1/off", HTTP_GET, []() {
+    digitalWrite(12, LOW);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led2/on", HTTP_GET, []() {
+    digitalWrite(13, HIGH);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led2/off", HTTP_GET, []() {
+    digitalWrite(13, LOW);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led3/on", HTTP_GET, []() {
+    digitalWrite(19, HIGH);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led3/off", HTTP_GET, []() {
+    digitalWrite(19, LOW);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led4/on", HTTP_GET, []() {
+    digitalWrite(27, HIGH);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led4/off", HTTP_GET, []() {
+    digitalWrite(27, LOW);
+    server.send(200, "text/plain", "LED ligado");
+  });
+  server.on("/led5/on", HTTP_GET, []() {
+    digitalWrite(14, HIGH);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+  server.on("/led5/off", HTTP_GET, []() {
+    digitalWrite(14, LOW);
+    server.send(200, "text/plain", "LED ligado");
+  });
+
+
+  server.on("/temperature", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(200);
+    double temperature = dht.readTemperature();
+    if (!isnan(temperature)) {
+      jsonDocument["type"] = "temperature";
+      jsonDocument["value"] = temperature;
+      jsonDocument["unit"] = "°C";
+    } else {
+      jsonDocument["error"] = "Failed to read temperature";
+    }
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  server.on("/humidity", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "humidity";
+    jsonDocument["value"] = dht.readHumidity();
+    jsonDocument["unit"] = "%";
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  server.on("/moisture1", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(200);
+    int moisture = analogRead(MOISTURE_PIN_1);
+    jsonDocument["type"] = "moisture";
+    jsonDocument["value"] = moisture;
+    jsonDocument["unit"] = "%";
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+  
+  server.on("/co2", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(200);
+    int ppm = gasSensor.getPPM();
+    //if (ppm >= 0) {
+    jsonDocument["type"] = "co2";
+    jsonDocument["value"] = ppm;
+    jsonDocument["unit"] = "ppm";
+    //} else {
+    //  jsonDocument["error"] = "Failed to read CO2";
+    // }
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+
+  server.on("/data", HTTP_GET, []() {
+    DynamicJsonDocument jsonDocument(2000);
+    jsonDocument["temperature"]["type"] = "temperature";
+    jsonDocument["temperature"]["value"] = dht.readTemperature();
+    jsonDocument["temperature"]["unit"] = "°C";
+    jsonDocument["humidity"]["type"] = "humidity";
+    jsonDocument["humidity"]["value"] = dht.readHumidity();
+    jsonDocument["humidity"]["unit"] = "%";
+    jsonDocument["moisture1"]["type"] = "moisture1";
+    jsonDocument["moisture1"]["value"] = analogRead(MOISTURE_PIN_1);
+    jsonDocument["moisture1"]["unit"] = "%";
+    jsonDocument["co2"]["type"] = "co2";
+    jsonDocument["co2"]["value"] = gasSensor.getPPM();;
+    jsonDocument["co2"]["unit"] = "ppm";
+    String response;
+    serializeJson(jsonDocument, response);
+    server.send(200, "application/json", response);
+  });
+
+
+
+  server.begin();
+}
+
+void read_sensor_data(void * parameter) {
+  for (;;) {
+    double temperature = dht.readTemperature();
+    double umidade = dht.readHumidity();
+    double moisture1 = analogRead(MOISTURE_PIN_1);
+    double mq135 = analogRead(GAS_PIN);
+
+    vTaskDelay(pdMS_TO_TICKS(30000));
+  }
+}
+
+void setup_task() {
+  xTaskCreate(
+    read_sensor_data,
+    "Read sensor data",
+    1000,
+    NULL,
+    1,
+    NULL
+  );
+}
+
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  rtc.begin();
+
+  pinMode(12, OUTPUT);
+  pinMode(13, OUTPUT);
+  pinMode(14, OUTPUT);
+  pinMode(19, OUTPUT);
+  pinMode(27, OUTPUT);
+
+
+
+  WiFi.begin(SSID, PWD);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  setup_task(); // Setup sensor data reading task
+  setup_routing(); // Setup web server routing
+
+  Serial.println(WiFi.localIP());
+
+
+  lcd.init();
+  lcd.backlight();
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("SSD1306 allocation failed"));
+    while (true); // Don't proceed, loop forever
+  }
+
+  display.clearDisplay();
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 10);
+  display.println("IP");
+  display.setTextSize(2);
+  display.setTextColor(WHITE);
+  display.setCursor(0, 20);
+  display.print(WiFi.localIP());
+  display.display();
+  display.clearDisplay();
+
+}
+
+void loop() {
+  server.handleClient();
+
+  dataHora = String(now.day()) + "/" + String(now.month()) + "/" + String(now.year()) + " ";
+  dataHora += String(now.hour()) + ":" + String(now.minute()) + ":" + String(now.second());
+
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+    previousMillis = currentMillis;
+
+    lcd.clear();
+
+    if (currentBlock == 1) {
+      // Bloco 1: Mostrar dados do sensor DHT (Umidade e Temperatura)
+      lcd.setCursor(0, 0);
+      lcd.print("Umidade do Ar");
+
+      lcd.setCursor(0, 1);
+      float humidity = dht.readHumidity();
+      lcd.print(humidity);
+
+      lcd.setCursor(0, 2);
+      lcd.print("Temperatura");
+
+      lcd.setCursor(0, 3);
+      float temperature = dht.readTemperature();
+      lcd.print(temperature);
+    } else if (currentBlock == 2) {
+      // Bloco 2: Mostrar dados dos sensores de umidade
+      lcd.setCursor(0, 0);
+      lcd.print("Umidade 1:");
+
+      lcd.setCursor(0, 1);
+      float moisture1 = analogRead(MOISTURE_PIN_1);
+      lcd.print(moisture1);
+
+      lcd.setCursor(0, 2);
+      lcd.print("Umidade 2:");
+
+      lcd.setCursor(0, 3);
+      lcd.print("x");
+    } else if (currentBlock == 3) {
+      // Bloco 3: Mostrar dados do sensor de gás e data/hora
+      lcd.setCursor(0, 0);
+      lcd.print("Gas MQ135:");
+
+      lcd.setCursor(0, 1);
+      float mq135 = analogRead(GAS_PIN);
+      lcd.print(mq135);
+
+      lcd.setCursor(0, 2);
+      lcd.print("Data e Hora:");
+
+      lcd.setCursor(0, 3);
+      // Suponha que "dataHora" seja uma variável contendo a data e hora
+      lcd.print(dataHora);
+    }
+
+    currentBlock++;
+    if (currentBlock > 3) {
+      currentBlock = 1;
+    }
+  }
+  
+}
