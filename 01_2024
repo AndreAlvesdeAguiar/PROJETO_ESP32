@@ -1,0 +1,199 @@
+#include <WiFi.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <DHT.h>
+#include <ArduinoJson.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+const char* SSID = "Okura&Aguiar";
+const char* PWD = "*welcome03";
+
+const uint8_t MOISTURE_PIN_1 = 33;
+const uint8_t DHT_PIN = 25;
+const uint8_t DHTTYPE = DHT22;
+
+DHT dht(DHT_PIN, DHTTYPE);
+
+AsyncWebServer server(80);
+
+void setup() {
+  Serial.begin(115200);
+  dht.begin();
+
+  pinMode(12, OUTPUT);
+  pinMode(13, OUTPUT);
+  pinMode(14, OUTPUT);
+
+  WiFi.begin(SSID, PWD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
+    Serial.println(F("Falha na alocação do SSD1306"));
+    while (true);
+  }
+  display.display();
+  delay(1000);
+  display.clearDisplay();
+
+  setupServer();
+}
+
+void loop() {
+  displayData();
+}
+
+void setupServer() {
+
+  server.on("/led1/on", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(12, HIGH);  // Ligar o LED
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "LED1 LIGADO";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+  server.on("/led1/off", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(12, LOW);  // Desligar o LED
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "LED1 DESLIGADO";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+  server.on("/led2/on", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(13, HIGH);  // Ligar o LED
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "LED2 LIGADO";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+  server.on("/led2/off", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(13, LOW);  // Desligar o LED
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "LED2 DESLIGADO";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+    server.on("/led3/on", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(14, HIGH);  // Ligar o LED
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "LED3 LIGADO";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+  server.on("/led3/off", HTTP_GET, [](AsyncWebServerRequest *request){
+    digitalWrite(14, LOW);  // Desligar o LED
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "LED3 DESLIGADO";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+  server.on("/temperature", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "temperature";
+    jsonDocument["value"] = dht.readTemperature();
+    jsonDocument["unit"] = "°C";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+
+  server.on("/humidity", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "humidity";
+    jsonDocument["value"] = dht.readHumidity();
+    jsonDocument["unit"] = "%";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+
+  server.on("/moisture", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+    jsonDocument["type"] = "moisture";
+    jsonDocument["value"] = analogRead(MOISTURE_PIN_1);
+    jsonDocument["unit"] = "%";
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+
+  server.on("/data", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+
+    DynamicJsonDocument jsonDocument(800);
+    JsonArray temperatureArray = jsonDocument.createNestedArray("temperature");
+    temperatureArray.add(dht.readTemperature());
+    temperatureArray.add("°C");
+
+    JsonArray humidityArray = jsonDocument.createNestedArray("humidity");
+    humidityArray.add(dht.readHumidity());
+    humidityArray.add("%");
+
+    JsonArray moistureArray = jsonDocument.createNestedArray("moisture");
+    moistureArray.add(analogRead(MOISTURE_PIN_1));
+    moistureArray.add("%");
+
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+
+
+  server.on("/on", HTTP_GET, [](AsyncWebServerRequest *request){
+    displayData();
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", display.getBuffer(), display.width() * display.height());
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
+  });
+  server.on("/off", HTTP_GET, [](AsyncWebServerRequest *request){
+    displayDataOff();
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", display.getBuffer(), display.width() * display.height());
+    response->addHeader("Content-Encoding", "gzip");
+    request->send(response);
+  });
+
+  server.begin();
+}
+
+void displayData() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+
+  display.setTextSize(1);
+  display.setCursor(0, 5);
+  display.print(WiFi.localIP());
+
+  display.setTextSize(2);
+  display.setCursor(0, 15);
+  display.println("temp:" + String(dht.readTemperature()));
+
+  display.setTextSize(2);
+  display.setCursor(0, 33);
+  display.println("hum: " + String(dht.readHumidity()));
+
+  display.setTextSize(2);
+  display.setCursor(0, 50);
+  display.println("solo: " + String(analogRead(MOISTURE_PIN_1)));
+
+  delay(1000);
+  display.display();
+}
+void displayDataOff() {
+  display.clearDisplay();
+  display.display();
+
+}
