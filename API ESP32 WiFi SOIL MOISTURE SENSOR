@@ -1,0 +1,91 @@
+#include <WiFi.h>
+#include <WiFiClient.h>
+#include <WebServer.h>
+#include <ESPmDNS.h>
+#include "DHT.h"
+
+const char* ssid = "Okura&Aguiar";
+const char* password = "*welcome03";
+int port = 80;
+
+WebServer server(port);
+
+const int led = LED_BUILTIN;
+
+// DHT11 sensor setup
+#define DHTPIN 22
+#define DHTTYPE DHT11
+DHT dht(DHTPIN, DHTTYPE);
+
+// Soil moisture sensor setup
+float asoilmoist = analogRead(32); // Global variable for soil moisture reading
+
+void handleStatus() {
+  // Read the DHT sensor values
+  float hum = dht.readHumidity();
+  float temp = dht.readTemperature();
+  
+  // Check if any reads failed
+  if (isnan(hum) || isnan(temp)) {
+    server.send(500, "application/json", "{\"error\":\"Failed to read from DHT sensor\"}");
+    return;
+  }
+
+  // Create a JSON response
+  String json = "{";
+  json += "\"soil_moisture\":" + String(asoilmoist) + ",";
+  json += "\"temperature\":" + String(temp) + ",";
+  json += "\"humidity\":" + String(hum);
+  json += "}";
+
+  server.send(200, "application/json", json);
+}
+
+void handleUpdate() {
+  server.send(200, "text/plain", "Status updated");
+}
+
+void handleNotFound() {
+  server.send(404, "text/plain", "Not Found");
+}
+
+void setup() {
+  pinMode(led, OUTPUT);
+  digitalWrite(led, LOW);
+  Serial.begin(115200);
+
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+
+  // Wait for connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  Serial.print("Connected to ");
+  Serial.println(ssid);
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
+
+  if (MDNS.begin("esp32")) {
+    Serial.println("MDNS responder started");
+  }
+
+  // Define API endpoints
+  server.on("/status", HTTP_GET, handleStatus);
+  server.on("/status/update", HTTP_GET, handleUpdate);
+
+  server.onNotFound(handleNotFound);
+
+  server.begin();
+  Serial.println("HTTP server started");
+  dht.begin();
+  delay(2000);
+}
+
+void loop() {
+  // Exponential smoothing of soil moisture
+  asoilmoist = 0.95 * asoilmoist + 0.05 * analogRead(32);
+  server.handleClient();
+}
