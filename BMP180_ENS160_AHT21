@@ -1,0 +1,163 @@
+#include <WiFi.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <SFE_BMP180.h>
+#include <Adafruit_AHTX0.h>
+#include <ScioSense_ENS160.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncTCP.h>
+#include <ArduinoJson.h>
+
+Adafruit_AHTX0 aht;
+SFE_BMP180 pressure;
+ScioSense_ENS160 ens160(ENS160_I2CADDR_1); // 0x53 ENS160
+
+#define ALTITUDE 1655.0 // Altitude em metros
+
+int lcdColumns = 20;
+int lcdRows = 4;
+LiquidCrystal_I2C lcd(0x27, lcdColumns, lcdRows);
+
+const char* SSID = "Okura&Aguiar";
+const char* PWD = "*welcome03";
+
+AsyncWebServer server(80);
+
+double T = 0.0;
+double P = 0.0;
+float tempC, humidity; // Alterado para float
+
+void setup() {
+  Serial.begin(115200);
+
+  // Inicialização dos sensores
+  if (!aht.begin()) {
+    Serial.println("Falha ao iniciar o sensor AHT21.");
+    while (1);
+  }
+  if (!pressure.begin()) {
+    Serial.println("Falha ao iniciar o sensor BMP180.");
+    while (1);
+  }
+  if (!ens160.begin()) {
+    Serial.println("Falha ao iniciar o sensor ENS160.");
+    while (1);
+  } else {
+    ens160.setMode(ENS160_OPMODE_STD);
+  }
+
+  // Inicialização do LCD
+  lcd.init();
+  lcd.backlight();
+
+  // Conexão Wi-Fi
+  WiFi.begin(SSID, PWD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.println("Conectando ao WiFi...");
+  }
+  Serial.println("Conectado ao WiFi");
+
+  setupServer();
+}
+
+void loop() {
+  char status;
+  
+  // Leitura dos dados do AHT21
+  sensors_event_t humidity_event, temp_event;
+  aht.getEvent(&humidity_event, &temp_event);
+  tempC = temp_event.temperature;
+  humidity = humidity_event.relative_humidity;
+
+  Serial.print("Temperatura AHT21: "); Serial.print(tempC); Serial.println(" °C");
+  Serial.print("Umidade AHT21: "); Serial.print(humidity); Serial.println(" %");
+
+  // Leitura da temperatura do BMP180
+  status = pressure.startTemperature();
+  if (status != 0) {
+    delay(status);
+    status = pressure.getTemperature(T);
+    if (status != 0) {
+      Serial.print("Temperatura BMP180: ");
+      Serial.print(T, 2);
+      Serial.println(" °C");
+    } else {
+      Serial.println("Erro ao obter a temperatura BMP180.");
+    }
+  } else {
+    Serial.println("Erro ao iniciar a medição de temperatura BMP180.");
+  }
+
+  // Leitura da pressão do BMP180
+  status = pressure.startPressure(3);
+  if (status != 0) {
+    delay(status);
+    status = pressure.getPressure(P, T);
+    if (status != 0) {
+      Serial.print("Pressão BMP180: ");
+      Serial.print(P, 2);
+      Serial.println(" hPa");
+    } else {
+      Serial.println("Erro ao obter a pressão BMP180.");
+    }
+  } else {
+    Serial.println("Erro ao iniciar a medição de pressão BMP180.");
+  }
+
+  // Atualização dos dados do ENS160
+  if (ens160.available()) {
+    ens160.set_envdata(tempC, humidity);
+    ens160.measure(true);
+    Serial.print("AQI: "); Serial.print(ens160.getAQI());
+    Serial.print("\tTVOC: "); Serial.print(ens160.getTVOC()); Serial.print(" ppb\t");
+    Serial.print("eCO2: "); Serial.print(ens160.geteCO2()); Serial.println(" ppm");
+  }
+
+  // Atualiza LCD
+  lcd.setCursor(0, 0);
+  lcd.print("T:");
+  lcd.print(T, 2);
+  lcd.print("C Ta:");
+  lcd.print(tempC, 2);
+
+  lcd.setCursor(0, 1);
+  lcd.print("P: ");
+  lcd.print(P, 2);
+  lcd.print("hPa Ua:");
+  lcd.print(humidity, 2);
+
+  lcd.setCursor(0, 2);
+  lcd.print("Q:");
+  lcd.print(ens160.getAQI());
+  lcd.print(" TVOC:");
+  lcd.print(ens160.getTVOC());
+  lcd.print(" C2:");
+  lcd.print(ens160.geteCO2());
+
+  lcd.setCursor(0, 3);
+  lcd.print(WiFi.localIP());
+
+  delay(1000);
+}
+
+void setupServer() {
+  server.on("/dados", HTTP_GET, [](AsyncWebServerRequest *request){
+    AsyncResponseStream *response = request->beginResponseStream("application/json");
+    DynamicJsonDocument jsonDocument(200);
+
+    // Preencher os dados JSON
+    jsonDocument["temp_bmp180"] = T;
+    jsonDocument["pressure_bmp180"] = P;
+    jsonDocument["temp_aht21"] = tempC;
+    jsonDocument["humidity_aht21"] = humidity;
+    jsonDocument["aqi_ens160"] = ens160.getAQI();
+    jsonDocument["tvoc_ens160"] = ens160.getTVOC();
+    jsonDocument["eco2_ens160"] = ens160.geteCO2();
+
+    serializeJson(jsonDocument, *response);
+    request->send(response);
+  });
+
+  server.begin();
+}
