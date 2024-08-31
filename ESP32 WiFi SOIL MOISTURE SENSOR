@@ -11,7 +11,7 @@ int port=80;
 
 WebServer server(port);
 
-const int led = LED_BUILTIN;
+const int led = 2;
 
 //DHT11 things
 #include "DHT.h"
